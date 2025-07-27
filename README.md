@@ -1,4 +1,4 @@
-# ![Screenshot](screenshots/logo.png) IPSh ([IPSpeed.info](https://ipspeed.info) helper)
+# ![Logo](screenshots/logo.png) IPSh ([IPSpeed.info](https://ipspeed.info) helper)
 Скрипт, призванный помочь и максимально упростить работу с ipspeed.info... 
 
 ### Для тех, кто начинает с самого начала
