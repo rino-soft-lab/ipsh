@@ -1,8 +1,7 @@
-
 #!/bin/sh
 
-VERSION="24.6.12"
-TABLE_TEMP='/tmp/ipspeed.tmp'
+VERSION="25.6.12"
+TABLE_TEMP="/tmp/ipspeed.tmp"
 
 function tableLoader	#1 - тестовый режим
 	{
