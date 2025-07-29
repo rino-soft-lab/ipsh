@@ -1,7 +1,7 @@
 #!/bin/sh
 
 VERSION="beta 2"
-BUILD="0727.1"
+BUILD="0729.1"
 PROFILE_PATH="/opt/etc/ipsh/ipsh.conf"
 TABLE_FILE='/tmp/ipspeed.tbl'
 TABLE_TEMP='/tmp/ipspeed.tmp'
@@ -102,20 +102,30 @@ function messageBox	#1 - текст	#2 - цвет
 	local LONG=`echo ${#TEXT}`
 	if [ ! "$LONG" -gt "`expr $COLUNS - 4`" ];then
 		local TEXT="│ $TEXT │"
-		local SIZE=`expr $COLUNS - $LONG - 4`
+		local LONG=`echo ${#TEXT}`
+		local SIZE=`expr $COLUNS - $LONG`
 		local SIZE=`expr $SIZE / 2`
 		local SPACE=`awk -v i=$SIZE 'BEGIN { OFS=" "; $i=" "; print }'`
+		local LONG=`expr $LONG - 4`
+		local LEFT_UP='┌'
+		local RIGHT_UP='┐'
+		local LEFT_DOWN='└'
+		local RIGHT_DOWN='┘'
 	else
 		local LONG=`expr $COLUNS - 4`
 		local SPACE=""
+		local LEFT_UP='□'
+		local RIGHT_UP='□'
+		local LEFT_DOWN='□'
+		local RIGHT_DOWN='□'
 	fi
 	if [ "$COLUNS" = "80" ];then
-		echo -e "$COLOR$SPACE┌─`awk -v i=$LONG 'BEGIN { OFS="─"; $i="─"; print }'`─┐\033[39m\033[49m"
+		echo -e "$COLOR$SPACE$LEFT_UP─`awk -v i=$LONG 'BEGIN { OFS="─"; $i="─"; print }'`─$RIGHT_UP\033[39m\033[49m"
 		echo -e "$COLOR$SPACE$TEXT\033[39m\033[49m"
-		echo -e "$COLOR$SPACE└─`awk -v i=$LONG 'BEGIN { OFS="─"; $i="─"; print }'`─┘\033[39m\033[49m"
+		echo -e "$COLOR$SPACE$LEFT_DOWN─`awk -v i=$LONG 'BEGIN { OFS="─"; $i="─"; print }'`─$RIGHT_DOWN\033[39m\033[49m"
 	else
 		echo -e "$COLOR$SPACE□-`awk -v i=$LONG 'BEGIN { OFS="-"; $i="-"; print }'`-□\033[39m\033[49m"
-		echo -e "$COLOR$SPACE`showText "$TEXT"`\033[39m\033[49m"
+		echo -e "$COLOR$SPACE$TEXT\033[39m\033[49m"
 		echo -e "$COLOR$SPACE□-`awk -v i=$LONG 'BEGIN { OFS="-"; $i="-"; print }'`-□\033[39m\033[49m"
 	fi
 	}
