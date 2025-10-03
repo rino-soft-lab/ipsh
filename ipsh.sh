@@ -1,7 +1,7 @@
 #!/bin/sh
 
 VERSION="beta 2"
-BUILD="0729.1"
+BUILD="1003.1"
 PROFILE_PATH="/opt/etc/ipsh/ipsh.conf"
 TABLE_FILE='/tmp/ipspeed.tbl'
 TABLE_TEMP='/tmp/ipspeed.tmp'
@@ -188,10 +188,11 @@ function showOption	#1 - текст	#2 - флаг блокировки
 
 function interfaceID	#1 - форсировать создание подключения	#2 - остановиться после выполнения
 	{
+	export LD_LIBRARY_PATH=/lib:/usr/lib:$LD_LIBRARY_PATH
 	if [ "$NDMS_VERSION" = "2.x" ];then
 		local ID="`ndmc -c "show interface" | grep -i -B 3 -A 0 "$INTERFACE_NAME" | grep "id: " | awk -F": " '{print $2}'`"
 	else
-		local ID="`ndmc -c "show interface" | grep -i -B 4 -A 0 "$INTERFACE_NAME" | grep "id: " | awk -F": " '{print $2}'`"
+		local ID="`ndmc -c show interface | grep -B 4 -A 0 "$INTERFACE_NAME" | grep "id: " | awk -F": " '{print $2}'`"
 	fi
 	if [ -n "$ID" ];then
 		INTERFACE="$ID"
@@ -254,7 +255,7 @@ function newList
 	if [ -z "$ELINKS" ];then
 		opkgElinks
 	fi
-	local TEST=`elinks -source https://ipspeed.info/freevpn_sstp.php | grep -c "vpn"`
+	local TEST=`elinks -source https://ipspeed.info/free-sstp.php | grep -c "vpn"`
 	if [ "$TEST" -gt "0" ];then
 		local LOADER=`dirname $PROFILE_PATH`/loader.sh
 		loader
@@ -505,7 +506,7 @@ function connectionPing
 	interfaceID
 	isDisabled
 	if [ -n "$SYSTEM_NAME" ];then
-		local PING_RESULT="`ping 8.8.8.8 -I $SYSTEM_NAME -w 2 -q | grep "packets transmitted" | awk -F" " '{print $4" из "$1}'`"
+		local PING_RESULT="`/opt/bin/ping 8.8.8.8 -I $SYSTEM_NAME -w 2 -q | grep "packets transmitted" | awk -F" " '{print $4" из "$1}'`"
 		if [ -z "$PING_RESULT" ];then
 			showMessage "Не удалось выполнить PING через SSTP-подключение..."
 			echo ""
@@ -535,47 +536,42 @@ function connectionPing
 	fi
 	}
 
-function chmodRWX	#1 - путь к файлу
+function opkgCron
 	{
-	local DIR_NAME="`dirname "$1"`"
-	local FILE_NAME="`basename "$1"`"
-	if [ -z "`ls -l "$DIR_NAME" | grep "$FILE_NAME" | grep -G ".rwxr.xr.x"`" ];then
-		chmod +rwx $1
+	if [ -z "`opkg list-installed | grep "^cron"`" ];then
+		echo "Установка cron..."
+		echo "`opkg update`" > /dev/null
+		echo "`opkg install cron`" > /dev/null
+		echo ""
+		if [ -z "`opkg list-installed | grep "^cron"`" ];then
+			messageBox "`showMessage "Не удалось установить: cron"`"
+			echo ""
+			showText "\tВы можете попробовать установить пакет cron вручную, командами:"
+			showText "\t\t# opkg update"
+			showText "\t\t# opkg install cron"
+			exit
+		fi
 	fi
 	}
 
 function pingScheduleAdd
 	{
-	if [ ! -f "$CRON_FILE" ];then
-		if [ ! -d "`dirname "$CRON_FILE"`" ];then
-			mkdir -p "`dirname "$CRON_FILE"`"
-		fi
-		echo "" > $CRON_FILE
-	fi
-	chmodRWX "$CRON_FILE"
-	if [ -n "`cat $CRON_FILE | grep "ipsh -P"`" ];then
-		local LIST="`cat $CRON_FILE | grep -v "ipsh -P"`"
-		echo "$LIST" > $CRON_FILE
-	fi
-	echo '0-59 */1 * * * ipsh -P' >> $CRON_FILE
+	opkgCron
+	echo -e "#!/bin/sh\n\nipsh -P" > /opt/etc/cron.1min/ipsh-p.sh
+	chmod +x /opt/etc/cron.1min/ipsh-p.sh
+	echo "`/opt/etc/init.d/S10cron restart`" > /dev/null
 	messageBox "`showMessage "Автоматическая проверка PING - включена."`"
-	echo "`killall crond`" > /dev/null
-	echo "`crond`" > /dev/null
 	echo ""
 	}
 
 function pingScheduleDelete	#1 - не выводить в терминал
 	{
-	if [ -n "`cat $CRON_FILE | grep "ipsh -P"`" ];then
-		local LIST="`cat $CRON_FILE | grep -v "ipsh -P"`"
-		echo "$LIST" > $CRON_FILE
+	if [ -f "/opt/etc/cron.1min/ipsh-p.sh" ];then
+		rm -rf /opt/etc/cron.1min/ipsh-p.sh
+		echo "`/opt/etc/init.d/S10cron restart`" > /dev/null
 	fi
-	if [ -z "$1" ];then
-		messageBox "`showMessage "Автоматическая проверка PING - отключена."`"
-		echo ""
-	fi
-	echo "`killall crond`" > /dev/null
-	echo "`crond`" > /dev/null
+	messageBox "`showMessage "Автоматическая проверка PING - отключена."`"
+	echo ""
 	}
 
 function opkg3proxy
@@ -652,16 +648,17 @@ function proxyCheck
 function ndmScriptAdd
 	{
 	interfaceID
-	#if [ "$NDMS_VERSION" = "2.x" ];then
-		#echo -e "#!/bin/sh\n\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\tif [ \"\$link\" = \"down\" -a \"\$up\" = \"up\" -a \"\$change\" = \"config\" ];then\t\tif [ \"\`cat /opt/etc/ipsh/ipsh.conf | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"1\" ];then\n\t\t\tipsh -N &\n\t\telif [ \"\`cat /opt/etc/ipsh/ipsh.conf | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"2\" ];then\n\t\t\tipsh -R &\n\t\telse\n\t\t\tipsh -C &\n\t\tfi\n\telif [ \"\$link\" = \"up\" -a \"\$up\" = \"down\" -a \"\$change\" = \"config\" ];then\n\t\tipsh -D\n\tfi\nfi\nexit" > /opt/etc/ndm/ifstatechanged.d/ipsh.sh
-		#chmodRWX "/opt/etc/ndm/ifstatechanged.d/ipsh.sh"
-		#messageBox "`showMessage "Сценарий в ifstatechanged.d - создан."`"
-	#el
-	if [ "$NDMS_VERSION" = "4.0-" ];then
-		echo -e "#!/bin/sh\n\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\tif [ \"\$link\" = \"down\" -a \"\$up\" = \"up\" -a \"\$change\" = \"config\" -a \"\`ndmc -c \"show interface \$id\" | grep \"conf: \" | awk -F\": \" '{print \$2}'\`\" = \"running\" ];then\n\t\tif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"1\" ];then\n\t\t\tipsh -N &\n\t\telif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"2\" ];then\n\t\t\tipsh -R &\n\t\telse\n\t\t\tipsh -C &\n\t\tfi\n\telif [ \"\$link\" = \"down\" -a \"\$up\" = \"up\" -a \"\$change\" = \"config\" -a \"\`ndmc -c \"show interface \$id\" | grep \"conf: \" | awk -F\": \" '{print \$2}'\`\" = \"disabled\" ];then\n\t\tipsh -D &\n\tfi\nfi\nexit" > /opt/etc/ndm/ifstatechanged.d/ipsh.sh
+	if [ "$NDMS_VERSION" = "2.x" ];then
+		echo -e "#!/bin/sh\n\nexport LD_LIBRARY_PATH=/lib:/usr/lib:\$LD_LIBRARY_PATH\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\tif [ \"\$link\" = \"down\" -a \"\$up\" = \"up\" -a \"\$change\" = \"config\" ];then\t\tif [ \"\`cat /opt/etc/ipsh/ipsh.conf | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"1\" ];then\n\t\t\tipsh -N &\n\t\telif [ \"\`cat /opt/etc/ipsh/ipsh.conf | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"2\" ];then\n\t\t\tipsh -R &\n\t\telse\n\t\t\tipsh -C &\n\t\tfi\n\telif [ \"\$link\" = \"up\" -a \"\$up\" = \"down\" -a \"\$change\" = \"config\" ];then\n\t\tipsh -D\n\tfi\nfi\nexit" > /opt/etc/ndm/ifstatechanged.d/ipsh.sh
+		chmod 755 /opt/etc/ndm/ifstatechanged.d/ipsh.sh
+		messageBox "`showMessage "Сценарий в ifstatechanged.d - создан."`"
+	elif [ "$NDMS_VERSION" = "4.0-" ];then
+		echo -e "#!/bin/sh\n\nexport LD_LIBRARY_PATH=/lib:/usr/lib:\$LD_LIBRARY_PATH\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\tif [ \"\$link\" = \"down\" -a \"\$up\" = \"up\" -a \"\$change\" = \"config\" -a \"\`ndmc -c \"show interface \$id\" | grep \"conf: \" | awk -F\": \" '{print \$2}'\`\" = \"running\" ];then\n\t\tif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"1\" ];then\n\t\t\tipsh -N &\n\t\telif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"2\" ];then\n\t\t\tipsh -R &\n\t\telse\n\t\t\tipsh -C &\n\t\tfi\n\telif [ \"\$link\" = \"down\" -a \"\$up\" = \"up\" -a \"\$change\" = \"config\" -a \"\`ndmc -c \"show interface \$id\" | grep \"conf: \" | awk -F\": \" '{print \$2}'\`\" = \"disabled\" ];then\n\t\tipsh -D &\n\tfi\nfi\nexit" > /opt/etc/ndm/ifstatechanged.d/ipsh.sh
+		chmod 755 /opt/etc/ndm/ifstatechanged.d/ipsh.sh
 		messageBox "`showMessage "Сценарий в ifstatechanged.d - создан."`"
 	else
-		echo -e "#!/bin/sh\n\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\tif [ \"\$layer\" = \"conf\" -a \"\$level\" = \"running\" ];then\n\t\tif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"1\" ];then\n\t\t\tipsh -N &\n\t\telif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"2\" ];then\n\t\t\tipsh -R &\n\t\telse\n\t\t\tipsh -C &\n\t\tfi\n\telif [ \"\$layer\" = \"ctrl\" -a \"\$level\" = \"disabled\" ];then\n\t\tipsh -D &\n\tfi\nfi\nexit" > /opt/etc/ndm/iflayerchanged.d/ipsh.sh
+		echo -e "#!/bin/sh\n\nexport LD_LIBRARY_PATH=/lib:/usr/lib:\$LD_LIBRARY_PATH\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\tif [ \"\$layer\" = \"conf\" -a \"\$level\" = \"running\" ];then\n\t\tif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"1\" ];then\n\t\t\tipsh -N &\n\t\telif [ \"\`cat $PROFILE_PATH | grep \"SWITCH_NEXT=\" | awk -F\"=\" '{print \$2}'\`\" = \"2\" ];then\n\t\t\tipsh -R &\n\t\telse\n\t\t\tipsh -C &\n\t\tfi\n\telif [ \"\$layer\" = \"ctrl\" -a \"\$level\" = \"disabled\" ];then\n\t\tipsh -D &\n\tfi\nfi\nexit" > /opt/etc/ndm/iflayerchanged.d/ipsh.sh
+		chmod 755 /opt/etc/ndm/iflayerchanged.d/ipsh.sh
 		messageBox "`showMessage "Сценарий в iflayerchanged.d - создан."`"
 	fi
 	echo ""
@@ -687,12 +684,13 @@ function ndmScriptDelete	#1 - не выводить в терминал
 
 function systemNameDetect
 	{
-	showMessage "Определение \"system_name\" SSTP-интерфейса:"
 	echo ""
+	export LD_LIBRARY_PATH=/lib:/usr/lib:$LD_LIBRARY_PATH
 	interfaceID
-	#if [ "$NDMS_VERSION" = "4.3+" ];then
-		#SYSTEM_NAME="`ndmc -c "show interface system-name $ID"`"
-	#else
+	if [ "$NDMS_VERSION" = "4.3+" ];then
+		SYSTEM_NAME="`ndmc -c show interface $INTERFACE system-name | awk -F": " '{print $2}' | grep -v '^$'`"
+	else
+		showMessage "Определение \"system_name\" SSTP-интерфейса..."
 		echo -e "#!/bin/sh\n\nif [ \"\$id\" = \"$INTERFACE\" ];then\n\techo \"\$system_name\" > /tmp/system_name_detect.tmp\nfi\nexit" > /opt/etc/ndm/ifstatechanged.d/system_name_detect.sh
 		if [ -n "`isDisabled "" "skip exit"`" ];then
 			flagUp "определение system_name, при выключенном SSTP-подключении" "no console"
@@ -715,7 +713,7 @@ function systemNameDetect
 		profileSave "SYSTEM_NAME=$SYSTEM_NAME"
 		rm -rf /tmp/system_name_detect.tmp
 		rm -rf /opt/etc/ndm/ifstatechanged.d/system_name_detect.sh
-	#fi
+	fi
 	}
 
 function connectionCreate	#1 - пропустить диалог
@@ -870,6 +868,8 @@ function portSet
 
 function segListGet
 	{
+#FILTER=`ip addr show | awk -F" |/" '{gsub(/^ +/,"")}/inet /{print $(NF)"\t"$2}' | grep "^br" | awk -F"\t" '{print "^address: "$2}'`
+#ndmc -c show interface | sed 's/^[ ]*//' | grep "^address: \|^description: " | grep -B 1 "$FILTER"
 	local IP_ADDR_SHOW=`ip addr show | awk -F" |/" '{gsub(/^ +/,"")}/inet /{print $(NF)"\t"$2}' | grep -v "^lo\|^ezcfg"`
 	local SHOW_INTERFACE=`ndmc -c show interface | grep "address: \|description: "`
 	IFS=$'\n'
@@ -1264,7 +1264,7 @@ function connectionPingSettings
 	headLine "Отслеживание наличия интернета"
 	showText "\tСерверы с IPSpeed.info - сконфигурированы так, что отключают клиентам доступ в интернет (при отсутствии активности, в течении какого-то времени), не разрывая при этом подключения. Данная функция - позволяет (в некоторых случаях) продлить время работы с сервером, а в случае блокировки (на нём) доступа в интернет - автоматически найти новый..."
 	echo ""
-	if [ -n "`cat $CRON_FILE | grep "ipsh -P"`" ];then
+	if [ -f "/opt/etc/cron.1min/ipsh-p.sh" ];then
 		messageBox "Функция - включена."
 		local STATE1="block"
 		local STATE2=""
@@ -1525,16 +1525,11 @@ function policySet
 
 function settingsMenu
 	{
-	if [ "$NDMS_VERSION" = "2.x" ];then
-		local STATE="block"
-	else
-		local STATE=""
-	fi
 	headLine "Настройки"
 	echo -e "\t1: Режим работы журнала"
 	echo -e "\t2: Тайм-аут"
-	showOption "\t3: Поведение при включении" "$STATE"
-	showOption "\t4: Отслеживание работы подключения" "$STATE"
+	echo -e "\t3: Поведение при включении" "$STATE"
+	echo -e "\t4: Отслеживание работы подключения" "$STATE"
 	echo -e "\t5: Отслеживание наличия интернета"
 	echo -e "\t6: Имя подключения"
 	echo -e "\t7: Имя политики доступа"
@@ -1552,23 +1547,11 @@ function settingsMenu
 		settingsMenu
 		exit
 	elif [ "$REPLY" = "3" ];then
-		if [ -z "$STATE" ];then
-			switchSettings
-		else
-			messageBox "Функция недоступна на KeeneticOS 2.x." "\033[91m"
-			echo ""
-			read -n 1 -r -p "(Чтобы продолжить - нажмите любую клавишу...)" keypress
-		fi
+		switchSettings
 		settingsMenu
 		exit
 	elif [ "$REPLY" = "4" ];then
-		if [ -z "$STATE" ];then
-			connectionWatchSettings
-		else
-			messageBox "Функция недоступна на KeeneticOS 2.x." "\033[91m"
-			echo ""
-			read -n 1 -r -p "(Чтобы продолжить - нажмите любую клавишу...)" keypress
-		fi
+		connectionWatchSettings
 		settingsMenu
 		exit
 	elif [ "$REPLY" = "5" ];then
