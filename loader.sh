@@ -1,9 +1,9 @@
 #!/bin/sh
 
-VERSION="25.6.12"
+VERSION="25.10.3"
 TABLE_TEMP="/tmp/ipspeed.tmp"
 
-function tableLoader	#1 - тестовый режим
+function multiPageTableLoader	#1 - тестовый режим
 	{
 	TABLE=""
 	local NUM=1
@@ -14,6 +14,28 @@ function tableLoader	#1 - тестовый режим
 		TABLE="$TABLE\n$PAGE"
 		local NUM=`expr $NUM + 1`
 	done
+	TABLE=`echo -e "$TABLE" | grep -v '^$\|Russian Federation\|Ukraine'`
+	if [ -z "$1" ];then
+		if [ "`echo "$TABLE" | grep -c $`" -gt "1" ];then
+			echo "$TABLE" > $TABLE_TEMP
+		fi
+	else
+		local COUNTER=24
+		while [ "$COUNTER" -gt "0" ];do
+			echo -e "\033[30m█\033[39m"
+			local COUNTER=`expr $COUNTER - 1`
+		done
+		clear
+		echo "$TABLE"
+	fi
+	}
+
+function tableLoader	#1 - тестовый режим
+	{
+	TABLE=""
+	local URL="https://ipspeed.info/free-sstp.php"
+	local RAW=`elinks -source $URL`
+	TABLE=`echo -e "$RAW" | sed $'s/[^[:print:]\t]//g' | sed 's/class="text-center w-n">/class="text-center w-n">@@/g; s/<[^>]*>\|    //g;' | tr '\n' '\t' | sed 's/@@/\\n@@/g' | grep "^@@" | grep -v '^@@#' | awk -F"\t" '{print $2"\t"$3"\t"$4"\t"$5}'`
 	TABLE=`echo -e "$TABLE" | grep -v '^$\|Russian Federation\|Ukraine'`
 	if [ -z "$1" ];then
 		if [ "`echo "$TABLE" | grep -c $`" -gt "1" ];then
